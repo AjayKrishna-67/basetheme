@@ -1,0 +1,563 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/Button';
+import { Price } from '@/components/products/Price';
+import { CurrencyCode } from '@/generated/graphql';
+import { OrderStateBadge } from '@/components/account/OrderStateBadge';
+import { ChevronRightIcon } from '@heroicons/react/24/solid';
+import { EllipsisVerticalIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
+
+// Define types that match exactly what comes from your GraphQL query
+type FulfillmentLine = {
+  __typename?: 'FulfillmentLine';
+  quantity: number;
+  fulfillment: {
+    id: string;
+    state: string;
+    updatedAt: string;
+    trackingCode?: string;
+  };
+};
+
+type Asset = {
+  __typename?: 'Asset';
+  id: string;
+  source: string;
+  preview: string;
+};
+
+type OrderLine = {
+  __typename?: 'OrderLine';
+  id?: string; // Make optional if not always present
+  quantity: number;
+  discountedLinePriceWithTax: number;
+  discountedUnitPriceWithTax: number;
+  fulfillmentLines?: FulfillmentLine[] | null;
+  featuredAsset?: Asset | null;
+  productVariant: {
+    __typename?: 'ProductVariant';
+    id: string;
+    name: string;
+    currencyCode: string;
+    product: {
+      __typename?: 'Product';
+      slug: string;
+    };
+  };
+  // Add these as optional since they might not be in the response
+  unitPrice?: number;
+  unitPriceWithTax?: number;
+  linePriceWithTax?: number;
+  discounts?: Array<{
+    amount: number;
+    amountWithTax: number;
+    description: string;
+  }>;
+};
+
+type OrderDiscount = {
+  amount: number;
+  amountWithTax: number;
+  description: string;
+  adjustmentSource?: string;
+  type?: string;
+};
+
+type ShippingLine = {
+  priceWithTax: number;
+  shippingMethod: {
+    id: string;
+    code: string;
+    name: string;
+    description?: string;
+  };
+};
+
+type Fulfillment = {
+  id: string;
+  state: string;
+  trackingCode?: string;
+  updatedAt: string;
+};
+
+// Updated Order type to match your GraphQL response exactly
+type Order = {
+  __typename?: 'Order';
+  id: string;
+  code: string;
+  state: string;
+  active?: boolean;
+  orderPlacedAt?: string;
+  currencyCode: string;
+  subTotal: number;
+  subTotalWithTax: number;
+  total: number;
+  totalWithTax: number;
+  shipping?: number;
+  shippingWithTax?: number;
+  lines: OrderLine[];
+  discounts: OrderDiscount[];
+  taxSummary?: Array<{
+    taxBase: number;
+    taxTotal: number;
+  }>;
+  shippingLines: ShippingLine[];
+  fulfillments?: Fulfillment[];
+  customFields?: {
+    otherInstructions?: string;
+    clientRequestToCancel?: number;
+  };
+};
+
+type OrderHistoryItemProps = {
+  order: Order;
+  isInitiallyExpanded?: boolean;
+  areDetailsInitiallyExpanded?: boolean;
+  className?: string;
+};
+
+export default function OrderHistoryItem({
+  order,
+  isInitiallyExpanded = false,
+  areDetailsInitiallyExpanded = false,
+  className = '',
+}: OrderHistoryItemProps) {
+  const [isExpanded, setIsExpanded] = useState<boolean>(isInitiallyExpanded);
+  const [areDetailsExpanded, setAreDetailsExpanded] = useState<boolean>(
+    areDetailsInitiallyExpanded,
+  );
+  const [isLineCalcExpanded, setIsLineCalcExpanded] = useState<boolean>(false);
+  const [showCancelDialog, setShowCancelDialog] = useState<boolean>(false);
+  const [cancelReason, setCancelReason] = useState<string>('');
+  const router = useRouter();
+  const { t } = useTranslation();
+  const [fetcherState, setFetcherState] = useState<'idle' | 'submitting'>('idle');
+  const [actionData, setActionData] = useState<{ success?: boolean; message?: string } | undefined>(undefined);
+
+  // Check if order can be cancelled (not already cancelled, delivered, etc.)
+  const canCancelOrder =
+    order?.state &&
+    !['Cancelled', 'CancellationRequested', 'Delivered', 'Shipped'].includes(order.state);
+
+  // Check if cancel request is already pending
+  const hasPendingCancelRequest =
+    order?.customFields?.clientRequestToCancel !== undefined &&
+    order.customFields.clientRequestToCancel !== null &&
+    order.customFields.clientRequestToCancel > 0;
+
+  const handleCancelOrder = async () => {
+    if (!order?.id || !order?.totalWithTax) return;
+    if (!cancelReason || cancelReason.trim() === '') {
+      return; // Don't submit if reason is empty
+    }
+
+    const formData = new FormData();
+    formData.append('intent', 'cancel-order');
+    formData.append('orderId', order.id);
+    formData.append('reason', cancelReason.trim());
+
+    setFetcherState('submitting');
+    try {
+      const res = await fetch('/api/cancel-order', { method: 'POST', body: formData });
+      const data = await res.json();
+      setActionData(data);
+      if (data.success) {
+        router.refresh();
+      }
+    } finally {
+      setFetcherState('idle');
+    }
+    setShowCancelDialog(false);
+    setCancelReason(''); // Reset reason after submission
+  };
+
+  const shipping = order.shippingWithTax ?? 0;
+
+  // Show success/error messages
+  const isSubmitting = fetcherState === 'submitting';
+
+  return (
+    <div className={`border rounded-lg overflow-hidden ${className}`}>
+      {actionData && (
+        <div
+          className={`p-3 text-sm ${
+            actionData.success
+              ? 'bg-green-50 text-green-800 border-b border-green-200'
+              : 'bg-red-50 text-red-800 border-b border-red-200'
+          }`}
+        >
+          {actionData.message}
+        </div>
+      )}
+
+      {/* Upper Summary */}
+      <div className="p-4 lg:p-6 flex flex-row justify-between items-center bg-gray-50 border-b">
+        {/* Infos */}
+        <div className="flex flex-col md:flex-row gap-4 md:gap-8 lg:gap-16 text-sm">
+          {/* Info - Date */}
+          <div>
+            <span className="block font-medium">{t('order.placedAt')}</span>
+            <span
+              className="text-gray-500"
+              title={
+                order.orderPlacedAt
+                  ? new Date(order.orderPlacedAt).toLocaleString()
+                  : ''
+              }
+            >
+              {order.orderPlacedAt
+                ? new Date(order.orderPlacedAt).toLocaleDateString(undefined, {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })
+                : '--'}
+            </span>
+          </div>
+          {/* Info - Total sum */}
+          <div>
+            <span className="block font-medium">{t('order.totalSum')}</span>
+            <span className="text-gray-500">
+              {order.totalWithTax != null &&
+              order.currencyCode &&
+              Object.values(CurrencyCode).includes(
+                order.currencyCode as CurrencyCode,
+              ) ? (
+                <Price
+                  priceWithTax={order.totalWithTax}
+                  currencyCode={order.currencyCode as CurrencyCode}
+                />
+              ) : (
+                '--'
+              )}
+            </span>
+          </div>
+          {/* Info - Order number */}
+          <div>
+            <span className="block font-medium">{t('order.number')}</span>
+            <span className="text-gray-500">{order.code || '--'}</span>
+          </div>
+        </div>
+
+        {/* Status + Actions */}
+        <div className="gap-4 lg:gap-6 flex flex-col items-end self-stretch justify-between md:flex-row md:items-center">
+          <div className="flex flex-col items-end gap-2">
+            <OrderStateBadge state={order.state} />
+            {hasPendingCancelRequest && order.state !== 'Cancelled' && (
+              <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
+                Cancel request pending
+              </span>
+            )}
+          </div>
+          <div className="flex" role="group">
+            <Button
+              className="bg-orange text-sm rounded-l-none"
+              onClick={() => setIsExpanded(!isExpanded)}
+              title={t('order.expand')}
+            >
+              <ChevronRightIcon
+                className={`w-5 h-5 transition-transform duration-100 ${
+                  isExpanded ? 'rotate-90' : ''
+                }`}
+              />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Collapsable details */}
+      {isExpanded && (
+        <div className="flex flex-col">
+          {order.lines.map((line, key) => (
+            <div
+              key={line.id || key}
+              className="p-4 lg:p-6 border-b flex flex-row gap-8 justify-between group"
+            >
+              {/* Product */}
+              <div className="inline-flex justify-center items-center gap-4">
+                <Link
+                  href={`/products/${line.productVariant.product.slug}`}
+                  className="hover:opacity-50 transition-opacity"
+                >
+                  <img
+                    src={
+                      line.featuredAsset?.source ||
+                      '/placeholder.svg?height=96&width=96'
+                    }
+                    alt={line.productVariant.name}
+                    className="w-24 h-24 object-cover rounded-md"
+                  />
+                </Link>
+                <span className="flex flex-1 flex-col gap-0">
+                  {/* Product name */}
+                  <Link
+                    href={`/products/${line.productVariant.product.slug}`}
+                    className="text-black text-sm font-semibold line-clamp-3 md:line-clamp-2 max-w-md hover:text-black/50"
+                    title={line.productVariant.name}
+                  >
+                    {line.productVariant.name}
+                  </Link>
+                  {/* Price and quantity */}
+                  <button
+                    className="inline-flex gap-2 items-center w-fit text-gray-500 text-sm mt-1"
+                    onClick={() => setIsLineCalcExpanded(!isLineCalcExpanded)}
+                  >
+                    {isLineCalcExpanded && (
+                      <>
+                        <span title={t('common.quantity')}>
+                          {line.quantity}
+                        </span>
+                        <span className="text-gray-300 select-none">x</span>
+                        <span title="Price per unit">
+                          {line.discountedUnitPriceWithTax != null &&
+                          line.productVariant.currencyCode &&
+                          Object.values(CurrencyCode).includes(
+                            line.productVariant.currencyCode as CurrencyCode,
+                          ) ? (
+                            <Price
+                              priceWithTax={line.discountedUnitPriceWithTax}
+                              currencyCode={
+                                line.productVariant.currencyCode as CurrencyCode
+                              }
+                            />
+                          ) : (
+                            '--'
+                          )}
+                        </span>
+                        <span className="text-gray-300 select-none">=</span>
+                      </>
+                    )}
+                    <span title="Subtotal">
+                      {line.discountedLinePriceWithTax != null &&
+                      line.productVariant.currencyCode &&
+                      Object.values(CurrencyCode).includes(
+                        line.productVariant.currencyCode as CurrencyCode,
+                      ) ? (
+                        <Price
+                          priceWithTax={line.discountedLinePriceWithTax}
+                          currencyCode={
+                            line.productVariant.currencyCode as CurrencyCode
+                          }
+                        />
+                      ) : (
+                        '--'
+                      )}
+                    </span>
+                  </button>
+                  {/* Shipment status */}
+                  <span className="text-gray-500 text-xs mt-2 tracking-wide">
+                    {!line.fulfillmentLines ||
+                    line.fulfillmentLines.reduce(
+                      (acc, fLine) => acc + fLine.quantity,
+                      0,
+                    ) === 0
+                      ? t('order.notShipped')
+                      : `${line.fulfillmentLines.reduce(
+                          (acc, fLine) => acc + fLine.quantity,
+                          0,
+                        )} ${t('common.or')} ${line.quantity} ${t(
+                          'order.items.fulfilled',
+                        )}`}
+                    {line.fulfillmentLines
+                      ?.filter((fLine) => fLine.quantity > 0)
+                      .map((fLine, index) => (
+                        <span
+                          key={fLine.fulfillment.id || index}
+                          className="block first:mt-2"
+                          title={
+                            fLine.fulfillment.updatedAt
+                              ? new Date(
+                                  fLine.fulfillment.updatedAt,
+                                ).toLocaleString()
+                              : ''
+                          }
+                        >
+                          {fLine.fulfillment.state}:{' '}
+                          {fLine.fulfillment.updatedAt
+                            ? new Intl.DateTimeFormat(undefined, {
+                                dateStyle: 'medium',
+                              }).format(new Date(fLine.fulfillment.updatedAt))
+                            : 'N/A'}
+                        </span>
+                      ))}
+                  </span>
+                </span>
+              </div>
+            </div>
+          ))}
+
+          {/* Per order actions */}
+          <div className="p-2 lg:py-3 lg:px-6 gap-2 lg:gap-6 grid grid-cols-2 sm:flex justify-end items-center">
+            {canCancelOrder && !hasPendingCancelRequest && (
+              <button
+                onClick={() => setShowCancelDialog(true)}
+                className="border border-red-500 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-md py-2 px-4 text-xs font-medium flex items-center justify-center gap-2 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 order-1 sm:order-none"
+                title="Cancel Order"
+                disabled={isSubmitting}
+              >
+                <XMarkIcon className="w-4 h-4" />
+                <span>Cancel</span>
+              </button>
+            )}
+            <Button
+              onClick={() => setAreDetailsExpanded(!areDetailsExpanded)}
+              className="col-start-2 order-2 sm:order-none"
+            >
+              <span className="text-xs">{t('order.detailedOverview')}</span>
+              <ChevronRightIcon
+                className={`w-5 h-5 transition-transform duration-100 ${
+                  areDetailsExpanded ? 'rotate-90' : ''
+                }`}
+              />
+            </Button>
+          </div>
+
+          {/* More details - Could be expanded with shipping addresses, payment option, etc. */}
+          {areDetailsExpanded && (
+            <div className="p-2 lg:p-3 grid grid-cols-2 gap-1 text-sm max-w-sm self-center md:self-end">
+              <h6 className="font-medium col-span-full">
+                {t('order.summary')}
+              </h6>
+              <span>Subtotal</span>
+              <span className="text-end">
+                {(() => {
+                  const subtotal = order.lines.reduce(
+                    (acc, line) => acc + (line.discountedLinePriceWithTax ?? 0),
+                    0,
+                  );
+                  return (
+                    <Price
+                      priceWithTax={subtotal}
+                      currencyCode={order.currencyCode as CurrencyCode}
+                    />
+                  );
+                })()}
+              </span>
+
+              <span>Shipping</span>
+              <span className="text-end">
+                <Price
+                  priceWithTax={shipping}
+                  currencyCode={order.currencyCode as CurrencyCode}
+                />
+              </span>
+
+              <span>Coupon & Discount</span>
+              <span className="text-end text-red-600">
+                {(() => {
+                  const subtotal = order.lines.reduce(
+                    (acc, line) => acc + (line.discountedLinePriceWithTax ?? 0),
+                    0,
+                  );
+                  const shippingVal = shipping;
+                  const total = order.totalWithTax ?? 0;
+                  const discount = subtotal + shippingVal - total;
+                  const hasDiscount =
+                    order.discounts &&
+                    order.discounts.length > 0 &&
+                    discount > 0;
+                  if (hasDiscount) {
+                    return (
+                      <>
+                        -
+                        <Price
+                          priceWithTax={discount}
+                          currencyCode={order.currencyCode as CurrencyCode}
+                        />
+                      </>
+                    );
+                  } else {
+                    return '--';
+                  }
+                })()}
+              </span>
+
+              <span className="font-medium">Total</span>
+              <span className="font-medium text-end">
+                <Price
+                  priceWithTax={order.totalWithTax ?? 0}
+                  currencyCode={order.currencyCode as CurrencyCode}
+                />
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cancel Order Dialog with Reason Input */}
+      {showCancelDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={() => {
+              setShowCancelDialog(false);
+              setCancelReason('');
+            }}
+          />
+
+          {/* Dialog */}
+          <div className="relative bg-white rounded-lg shadow-lg max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Cancel Order
+            </h3>
+
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to cancel order {order.code}? This action
+              will submit a cancellation request that requires admin approval.
+            </p>
+
+            <div className="mb-6">
+              <label
+                htmlFor="cancel-reason"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                Reason for Cancellation <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                id="cancel-reason"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Please provide a reason for cancelling this order..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+                rows={4}
+                required
+              />
+              {!cancelReason || cancelReason.trim() === '' ? (
+                <p className="mt-1 text-xs text-red-600">
+                  Please provide a reason for cancellation
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <Button
+                onClick={() => {
+                  setShowCancelDialog(false);
+                  setCancelReason('');
+                }}
+                className="bg-gray-200 text-gray-800 hover:bg-gray-300"
+                disabled={isSubmitting}
+              >
+                Keep Order
+              </Button>
+              <Button
+                onClick={handleCancelOrder}
+                className="bg-red-600 text-white hover:bg-red-700"
+                disabled={
+                  isSubmitting || !cancelReason || cancelReason.trim() === ''
+                }
+              >
+                {isSubmitting ? 'Processing...' : 'Yes, Cancel Order'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

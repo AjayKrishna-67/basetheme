@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ─── Page ─── */
+    --bg-page: #FFFEF0;              /* cream - main page background */
+    --bg-surface: #FFFFFF;            /* white - cards, modals, panels */
+    --bg-surface-hover: #F9FAFB;     /* gray-50 - hover states */
+
+    /* ─── Header & Footer ─── */
+    --bg-header: #1E3A5F;            /* navy */
+    --text-header: #FFFFFF;
+    --text-header-accent: #D4AF37;   /* gold */
+    --bg-footer-from: #1E3A5F;
+    --bg-footer-to: #0F172A;
+    --text-footer: #FFFEF0;
+    --text-footer-accent: #D4AF37;
+
+    /* ─── Buttons ─── */
+    --bg-btn-primary: #CD7F32;       /* spice */
+    --bg-btn-primary-hover: #A36628;
+    --text-btn-primary: #FFFFFF;
+
+    /* ─── Text ─── */
+    --text-primary: #111827;          /* gray-900 */
+    --text-secondary: #374151;        /* gray-700 */
+    --text-tertiary: #6B7280;         /* gray-500 */
+    --text-muted: #9CA3AF;            /* gray-400 */
+
+    /* ─── Borders ─── */
+    --border-default: #E5E7EB;        /* gray-200 */
+    --border-strong: #D1D5DB;         /* gray-300 */
+
+    /* ─── Input ─── */
+    --bg-input: #FFFFFF;
+    --border-input: #D1DBE7;
+
+    /* ─── Accent ─── */
+    --color-accent: #a7a08a;          /* gold */
+
+    /* ─── Legacy (kept for backwards compat) ─── */
+    --background: var(--bg-page);
+    --foreground: var(--text-primary);
+    --card-bg: var(--bg-surface);
+    --card-foreground: var(--text-primary);
+    --muted: var(--bg-surface-hover);
+    --muted-foreground: var(--text-tertiary);
+    --border: var(--border-default);
+    --ring: var(--bg-btn-primary);
+    --input: var(--border-input);
+  }
+
+  .dark {
+    /* ─── Page ─── */
+    --bg-page: #0F172A;
+    --bg-surface: #1E293B;
+    --bg-surface-hover: #334155;
+
+    /* ─── Header & Footer ─── */
+    --bg-header: #0F172A;
+    --text-header: #F1F5F9;
+    --text-header-accent: #D4AF37;
+    --bg-footer-from: #0F172A;
+    --bg-footer-to: #020617;
+    --text-footer: #E2E8F0;
+    --text-footer-accent: #D4AF37;
+
+    /* ─── Buttons ─── */
+    --bg-btn-primary: #D4AF37;
+    --bg-btn-primary-hover: #B8960B;
+    --text-btn-primary: #0F172A;
+
+    /* ─── Text ─── */
+    --text-primary: #F1F5F9;
+    --text-secondary: #CBD5E1;
+    --text-tertiary: #94A3B8;
+    --text-muted: #64748B;
+
+    /* ─── Borders ─── */
+    --border-default: #334155;
+    --border-strong: #475569;
+
+    /* ─── Input ─── */
+    --bg-input: #1E293B;
+    --border-input: #475569;
+
+    /* ─── Accent ─── */
+    --color-accent: #D4AF37;
+
+    /* ─── Legacy ─── */
+    --background: var(--bg-page);
+    --foreground: var(--text-primary);
+    --card-bg: var(--bg-surface);
+    --card-foreground: var(--text-primary);
+    --muted: var(--bg-surface-hover);
+    --muted-foreground: var(--text-tertiary);
+    --border: var(--border-default);
+    --ring: var(--bg-btn-primary);
+    --input: var(--border-input);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  .cursor-arrow-left {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='17' fill='rgba(0,0,0,0.45)' stroke='white' stroke-width='1.5'/%3E%3Cpath d='M21 12l-6 6 6 6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 18 18, w-resize;
+  }
+  .cursor-arrow-right {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='17' fill='rgba(0,0,0,0.45)' stroke='white' stroke-width='1.5'/%3E%3Cpath d='M15 12l6 6-6 6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 18 18, e-resize;
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
